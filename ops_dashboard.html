@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HVAC 운영 리스크 트리아지 MVP</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .tool-wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
+    textarea { width: 100%; min-height: 220px; font-family: monospace; }
+    button { margin-top: 10px; margin-right: 10px; padding: 8px 12px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
+    th, td { border: 1px solid #d7d7d7; padding: 8px; vertical-align: top; }
+    th { background-color: #f4f4f4; }
+    .badge { padding: 3px 7px; border-radius: 4px; color: #fff; font-weight: 700; }
+    .RED { background: #cc2d2d; }
+    .AMBER { background: #d08700; }
+    .GREEN { background: #2a8f2a; }
+    .summary { display: flex; gap: 12px; margin-top: 12px; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 10px 14px; min-width: 120px; }
+  </style>
+</head>
+<body>
+  <h1><a href="index.html">WEB</a></h1>
+  <div class="tool-wrap">
+    <h2>HVAC 운영 리스크 트리아지 MVP</h2>
+    <p>목표: 생산 병목 조기 감지 + 부서 간 이슈 가시화 (Explainable Scoring)</p>
+
+    <textarea id="csvInput">job_id,part_num,due_date,qty_required,qty_on_hand,supplier_confirmed,engineering_ready,work_center_load
+JOB-1001,AHU-FAN-01,2026-04-21,100,20,no,yes,125
+JOB-1002,COIL-22,2026-04-30,50,60,yes,yes,95
+JOB-1003,DUCT-88,2026-04-23,80,20,no,no,105
+JOB-1004,VALVE-10,invalid-date,40,40,yes,no,80</textarea>
+    <div>
+      <button id="analyzeBtn">리스크 분석 실행</button>
+      <button id="exportBtn">결과 CSV 다운로드</button>
+    </div>
+
+    <div id="summary" class="summary"></div>
+    <div id="result"></div>
+  </div>
+
+  <script src="ops-risk.js"></script>
+  <script>
+    (function () {
+      var lastResult = [];
+
+      function renderSummary(items) {
+        var counts = { RED: 0, AMBER: 0, GREEN: 0 };
+        items.forEach(function (item) { counts[item.risk_band] += 1; });
+        document.getElementById('summary').innerHTML =
+          '<div class="card"><strong>RED</strong><br>' + counts.RED + '</div>' +
+          '<div class="card"><strong>AMBER</strong><br>' + counts.AMBER + '</div>' +
+          '<div class="card"><strong>GREEN</strong><br>' + counts.GREEN + '</div>' +
+          '<div class="card"><strong>Total</strong><br>' + items.length + '</div>';
+      }
+
+      function renderTable(items) {
+        if (!items.length) {
+          document.getElementById('result').innerHTML = '<p>입력 데이터가 없습니다.</p>';
+          return;
+        }
+
+        var rows = items.map(function (r) {
+          return '<tr>' +
+            '<td>' + r.job_id + '</td>' +
+            '<td>' + r.part_num + '</td>' +
+            '<td>' + r.score + '</td>' +
+            '<td><span class="badge ' + r.risk_band + '">' + r.risk_band + '</span></td>' +
+            '<td>' + r.shortage_qty + '</td>' +
+            '<td>' + r.reasons.join('<br>') + '</td>' +
+            '</tr>';
+        }).join('');
+
+        document.getElementById('result').innerHTML =
+          '<table><thead><tr>' +
+          '<th>Job</th><th>Part</th><th>Score</th><th>Band</th><th>Shortage Qty</th><th>Explainable Reasons</th>' +
+          '</tr></thead><tbody>' + rows + '</tbody></table>';
+      }
+
+      function exportCsv(items) {
+        if (!items.length) return;
+        var header = ['job_id', 'part_num', 'score', 'risk_band', 'shortage_qty', 'reasons'];
+        var lines = [header.join(',')];
+        items.forEach(function (r) {
+          lines.push([
+            r.job_id,
+            r.part_num,
+            r.score,
+            r.risk_band,
+            r.shortage_qty,
+            '"' + r.reasons.join('; ') + '"'
+          ].join(','));
+        });
+
+        var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        var link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'risk_triage_result.csv';
+        link.click();
+      }
+
+      document.getElementById('analyzeBtn').addEventListener('click', function () {
+        var text = document.getElementById('csvInput').value;
+        var rows = window.opsRisk.parseCsv(text);
+        lastResult = window.opsRisk.evaluateRecords(rows, new Date());
+        renderSummary(lastResult);
+        renderTable(lastResult);
+      });
+
+      document.getElementById('exportBtn').addEventListener('click', function () {
+        exportCsv(lastResult);
+      });
+
+      document.getElementById('analyzeBtn').click();
+    })();
+  </script>
+</body>
+</html>
